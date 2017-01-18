@@ -19,6 +19,7 @@ problems:
   headers in a very particular order.
   (This happens even without authentication!!!)
 - RTSP server doesn't properly \r\n\r\n-terminate a SETUP response.
+- RTP stream is fragmented in an unusual way.
 
 Tools in this repository
 ------------------------
@@ -35,8 +36,8 @@ This repository provides 2 scripts:
 Caveats
 -------
 
-- Please set your network protocol in the DVR to UDP. TCP framing tends to
-  work very poorly.
+- Please use TCP transport in your RTSP client. This doesn't support UDP
+  clients.
 
 Supported DVRs
 --------------

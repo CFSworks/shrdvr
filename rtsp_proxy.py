@@ -185,43 +185,109 @@ class RTSPChat(asynchat.async_chat):
             self.read_message()
         self.__buffer = ''
 
-class RTPTCPRelay(asyncore.dispatcher):
+class RTPRelay(object):
+    """Shared base class for the below.
+
+    This defragments Samsung's weird RTP format."""
+    def __init__(self, rtsp, channel):
+        self.rtsp = rtsp
+        self.channel = channel
+
+        self.buffer = ''
+        self.defragmented = None
+
+    def handle_bytes(self, data):
+        self.buffer += data
+
+        while self.process_packet(): pass
+
+    def process_packet(self):
+        # Process one packet from self.buffer, returning True on success
+
+        if len(self.buffer) < 12: return False # Not big enough to contain header
+
+        hdr1, hdr2, seq, ts, ssrc = struct.unpack('>BBHII', self.buffer[:12])
+
+        version = hdr1>>6
+        extension_bit = hdr1&0x10
+        csrc_count = hdr1&0x0F
+        marker_bit = hdr2&0x80
+
+        if version != 2:
+            print 'Warning: Bad RTP packet version found. Resetting defragmenter.'
+            self.buffer = ''
+            self.defragmented = None
+            return False
+
+        if extension_bit:
+            extension_offset = 12+4*csrc_count
+            profile, ehdr_length = struct.unpack('>HH', self.buffer[extension_offset:][:4])
+            extensions = self.buffer[extension_offset+4:][:ehdr_length*4]
+            payload_offset = extension_offset+4+ehdr_length*4
+        else:
+            # We need this to determine length!
+            print 'Warning: RTP packet with no extension header. Resetting defragmenter.'
+            self.buffer = ''
+            self.defragmented = None
+            return False
+
+        # Stop here if we still need more packet
+        if len(self.buffer) < payload_offset: return False
+        payload_len, = struct.unpack('<I', extensions[:4])
+        if len(self.buffer) < payload_offset+payload_len: return False
+
+        # See if this is a fresh packet, and if so, initialize the RTP header:
+        if self.defragmented is None:
+            self.defragmented = struct.pack('>BBHII', 0x80, hdr2, seq, ts, ssrc)
+
+        if self.defragmented is not None:
+            self.defragmented += self.buffer[payload_offset:][:payload_len]
+
+        if marker_bit:
+            self.pass_packet()
+
+        self.buffer = self.buffer[payload_offset+payload_len:]
+        return True
+
+    def pass_packet(self):
+        if self.defragmented is not None:
+            self.rtsp.send_interleaved(self.channel, self.defragmented)
+            self.defragmented = None
+
+class RTPTCPRelay(asyncore.dispatcher, RTPRelay):
     """This connects to the RTP port and relays it as interleaved messages on
     the RTSP connection instead.
     """
     def __init__(self, rtsp, channel, endpoint, session):
         asyncore.dispatcher.__init__(self, sock=socket.create_connection(endpoint))
+        RTPRelay.__init__(self, rtsp, channel)
 
         self.send(session + '\0')
 
-        self.rtsp = rtsp
-        self.channel = channel
-
     def handle_read(self):
         data = self.recv(0x10000)
-        self.rtsp.send_interleaved(self.channel, data)
+        self.handle_bytes(data)
 
     def writable(self):
         return False
 
-class RTPUDPRelay(asyncore.dispatcher):
+class RTPUDPRelay(asyncore.dispatcher, RTPRelay):
     """This communicates with the RTP UDP port and relays packets as interleaved
     messages on the RTSP connection instead.
     """
     def __init__(self, rtsp, channel, endpoint):
         asyncore.dispatcher.__init__(self)
+        RTPRelay.__init__(self, rtsp, channel)
+
         self.create_socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.set_reuse_addr()
 
         self.sendto('\0', endpoint)
 
-        self.rtsp = rtsp
-        self.channel = channel
-
     def handle_read(self):
         data = self.recv(0x10000)
         if data != '\0':
-            self.rtsp.send_interleaved(self.channel, data)
+            self.handle_bytes(data)
 
     def writable(self):
         return False
