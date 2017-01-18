@@ -414,6 +414,11 @@ class ProxyHandler(RTSPChat):
         req_headers, req_content = self.request
         resp_headers, resp_content = self.response
 
+        # If the request had a CSeq, make sure we have the same:
+        cseq = self.get_header(req_headers, 'CSeq')
+        if cseq:
+            self.set_header(resp_headers, cseq)
+
         if req_headers[0].startswith('DESCRIBE '):
             ctype = self.get_header(resp_headers, 'Content-Type')
             if ctype is not None and ctype.endswith('text/parameters'):

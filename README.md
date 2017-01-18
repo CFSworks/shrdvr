@@ -11,6 +11,8 @@ problems:
 
 - RTSP server doesn't know what to do with OPTIONS. Clients like VLC will stall
   upon connection.
+- RTSP server sometimes includes CSeq: 0 in responses instead of using the
+  correct value from the request.
 - RTSP server inserts spurious NULL bytes at the end of its replies.
 - RTSP server expects `Authorization` header, but the value must be acquired
   from a Samsung-internal "DCP" service.
