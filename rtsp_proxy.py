@@ -221,6 +221,7 @@ class RTPRelay(object):
 
         if extension_bit:
             extension_offset = 12+4*csrc_count
+            if len(self.buffer) < extension_offset+4: return False
             profile, ehdr_length = struct.unpack('>HH', self.buffer[extension_offset:][:4])
             extensions = self.buffer[extension_offset+4:][:ehdr_length*4]
             payload_offset = extension_offset+4+ehdr_length*4
