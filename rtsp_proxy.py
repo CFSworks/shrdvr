@@ -586,7 +586,13 @@ class ProxyServer(asyncore.dispatcher):
         if pair is None: return
 
         sock, addr = pair
-        remote = socket.create_connection(self.remote)
+
+        try:
+            remote = socket.create_connection(self.remote)
+        except socket.error:
+            sock.close()
+            return
+
         ProxyHandler(sock, remote, self.auth_pool)
 
 parser = argparse.ArgumentParser(description='Sit between an RTSP client and a Samsung DVR')
